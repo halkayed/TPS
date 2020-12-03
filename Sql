@@ -1,0 +1,231 @@
+USE [VSS]
+GO
+/****** Object:  StoredProcedure [dbo].[UpdateAllDataToItems]    Script Date: 2020-12-03 11:42:53 AM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+ALTER PROCEDURE [dbo].[UpdateAllDataToItems] 
+	@CompanyId int = 1
+AS
+BEGIN
+	SET NOCOUNT ON;
+
+	-----------------------------------------------------------------------------------------------
+	-----  [[[[[[ Units :  ]]]]]] --------
+	Merge VSS.dbo.Unit AS VSS_Unit
+
+	USING( 
+			SELECT        CompNo as CompanyID, VSUnitCode as UnitId, UnitName as DescA, UnitNameEng as DescE
+            FROM            DB.dbo.InvUnitCodes
+            WHERE        (CompNo = @CompanyId)
+		 )
+		 AS DB_Unit
+
+	ON VSS_Unit.UnitId = DB_Unit.UnitId AND VSS_Unit.CompanyID = DB_Unit.CompanyID
+	WHEN MATCHED THEN 
+		UPDATE SET VSS_Unit.DescriptionEnglish = DB_Unit.DescE,
+		VSS_Unit.DescriptionArabic = DB_Unit.DescA
+		 
+	WHEN NOT MATCHED THEN
+		INSERT (CompanyID, UnitID, DescriptionEnglish, DescriptionArabic)
+		VALUES (DB_Unit.CompanyID,DB_Unit.UnitId,DB_Unit.DescE,DB_Unit.DescA);
+
+	-----------------------------------------------------------------------------------------------
+	-------  [[[[[[ ItemCategory :  ]]]]]] --------
+	exec DB.dbo.ItemDivCateg @CompanyId
+
+	Merge VSS.dbo.ItemCategory AS VSS_ItemCategory
+
+	USING( 
+			SELECT        CompNo as CompanyID, CategID as CategoryID, DivID as DivisionID, DescA, DescE
+FROM            DB.dbo.ItemCateg
+WHERE        (CompNo = @CompanyId)
+
+--SELECT InvItemsMF.CompNo as CompanyID, ROW_NUMBER() over(order by  InvItemsMF.ItemNo) as CategoryID, ROW_NUMBER() over(order by  InvItemsMF.ItemNo) AS DivisionID,
+--REPLACE( SUBSTRING(ItemDesc,1,50),'''','') as DescA, REPLACE( SUBSTRING(ItemDesc,1,50),'''','') as  DescE
+--FROM            DB.dbo.InvItemsMF LEFT OUTER JOIN
+--                         DB.dbo.VanSales_Items ON InvItemsMF.CompNo = VanSales_Items.CompNo AND  InvItemsMF.ItemNo = VanSales_Items.ItemNo INNER JOIN
+--                                         DB.dbo.ItemCateg i ON InvItemsMF.CompNo = i.CompNo AND InvItemsMF.Categ = i.Categ AND InvItemsMF.SubCateg = i.SubCateg
+--WHERE        (InvItemsMF.CompNo = @CompanyId)  AND ((DivID = (CASE WHEN InvItemsMF.CompNo = 1 THEN 2 ELSE 1 END)) OR  InvItemsMF.ItemNo IN ('PK00057','pk00058','pk00137','pk00481','PK00670'))
+
+		 )
+		 AS DB_ItemCategory
+
+	ON VSS_ItemCategory.CategoryID = DB_ItemCategory.CategoryID AND VSS_ItemCategory.CompanyID = DB_ItemCategory.CompanyID
+	WHEN MATCHED THEN 
+		UPDATE SET VSS_ItemCategory.DescriptionEnglish = DB_ItemCategory.DescE,
+		VSS_ItemCategory.DescriptionArabic = DB_ItemCategory.DescA,
+		VSS_ItemCategory.DivisionID = DB_ItemCategory.DivisionID
+		 
+	WHEN NOT MATCHED THEN
+		INSERT (CompanyID, CategoryID, DivisionID, DescriptionEnglish, DescriptionArabic)
+		VALUES (DB_ItemCategory.CompanyID,DB_ItemCategory.CategoryID,DB_ItemCategory.DivisionID,DB_ItemCategory.DescE,DB_ItemCategory.DescA);
+------------------------------------------------------------------------------------------------------------------------------------------------------				
+	-------  [[[[[[ ItemDivision :  ]]]]]] --------
+	Merge VSS.dbo.ItemDivision AS VSS_ItemDivision
+
+	USING(
+			select CompNo,DivID,DescA,DescE
+			from DB.dbo.ItemDivision 
+			where  CompNo = @CompanyId
+
+--SELECT InvItemsMF.CompNo, ROW_NUMBER() over(order by InvItemsMF.ItemNo) AS DivID1, REPLACE( SUBSTRING(ItemDesc,1,50),'''','') as DescA, REPLACE( SUBSTRING(ItemDesc,1,50),'''','') as  DescE
+--FROM            DB.dbo.InvItemsMF LEFT OUTER JOIN
+--                         DB.dbo.VanSales_Items ON InvItemsMF.CompNo = VanSales_Items.CompNo AND  InvItemsMF.ItemNo = VanSales_Items.ItemNo INNER JOIN
+--                                         DB.dbo.ItemCateg i ON InvItemsMF.CompNo = i.CompNo AND InvItemsMF.Categ = i.Categ AND InvItemsMF.SubCateg = i.SubCateg
+--WHERE        (InvItemsMF.CompNo = @companyId)  AND ((DivID = (CASE WHEN InvItemsMF.CompNo = 1 THEN 2 ELSE 1 END)) OR  InvItemsMF.ItemNo IN ('PK00057','pk00058','pk00137','pk00481','PK00670'))
+--and InvItemsMF.ItemNo = 'fd00055'
+		 )
+		 AS DB_ItemDivision
+
+	ON VSS_ItemDivision.DivisionID = DB_ItemDivision.DivID AND VSS_ItemDivision.CompanyID = DB_ItemDivision.CompNo
+	WHEN MATCHED THEN 
+		UPDATE SET VSS_ItemDivision.DescriptionEnglish = DB_ItemDivision.DescE 
+		,VSS_ItemDivision.DescriptionArabic = DB_ItemDivision.DescA
+
+	WHEN NOT MATCHED THEN
+		INSERT (CompanyID, DivisionID, DescriptionEnglish, DescriptionArabic)
+		VALUES (DB_ItemDivision.CompNo,DB_ItemDivision.DivID,DB_ItemDivision.DescE,DB_ItemDivision.DescA);
+
+		
+	-----------------------------------------------------------------------------------------------
+	-------  [[[[[[ ItemUnits :  ]]]]]] --------
+	Delete FROM VSS.dbo.ItemUnits WHERE CompanyID = @CompanyId
+	INSERT INTO VSS.dbo.ItemUnits
+ 
+
+	SELECT CompNo as CompanyID, ItemNo as ItemNumber, VSUnitCode as UnitID, Conv2 as UnitQuantity, Barcode as Barcode, SUM(DefultUnit) as IsDefaultUnit, SUM(IsDefaultDisplayUnit) as DefaultDisplay,0 as RuleID
+FROM
+(
+SELECT     InvUnitCodes.CompNo,  UPPER(InvItemsMF.ItemNo) AS ItemNo , InvUnitCodes.VSUnitCode, InvItemsMF.Conv2 * InvItemsMF.Conv3*Conv4 AS Conv2, InvItemsMF.BarCode, 
+                      CASE WHEN InvItemsMF.DefultUnit = 1 THEN 1 ELSE 0 END AS DefultUnit, CASE WHEN InvItemsMF.DefultUnit = 1 THEN 1 ELSE 0 END AS IsDefaultDisplayUnit
+FROM         DB.dbo.InvUnitCodes INNER JOIN
+                      DB.dbo.InvItemsMF ON InvUnitCodes.CompNo = InvItemsMF.CompNo AND InvUnitCodes.UnitCode = InvItemsMF.UnitC1 --INNER JOIN
+                                         --DB.dbo.ItemCateg i ON InvItemsMF.CompNo = i.CompNo AND InvItemsMF.Categ = i.Categ AND InvItemsMF.SubCateg = i.SubCateg
+WHERE     (InvUnitCodes.CompNo = @CompanyId)  --AND (DivID = (CASE WHEN InvItemsMF.CompNo = 1 THEN 2 ELSE 1 END))
+--UNION
+--SELECT     InvUnitCodes.CompNo,  UPPER(InvItemsMF.ItemNo) AS ItemNo , InvUnitCodes.VSUnitCode, InvItemsMF.Conv2 * InvItemsMF.Conv3*Conv4 AS Conv2, InvItemsMF.BarCode, 
+--                      CASE WHEN InvItemsMF.DefultUnit = 1 THEN 1 ELSE 0 END AS DefultUnit, CASE WHEN InvItemsMF.DefultUnit = 1 THEN 1 ELSE 0 END AS IsDefaultDisplayUnit
+--FROM         DB.dbo.InvUnitCodes INNER JOIN
+--                      DB.dbo.InvItemsMF ON InvUnitCodes.CompNo = InvItemsMF.CompNo AND InvUnitCodes.UnitCode = InvItemsMF.UnitC1 INNER JOIN
+--                                         DB.dbo.ItemCateg i ON InvItemsMF.CompNo = i.CompNo AND InvItemsMF.Categ = i.Categ AND InvItemsMF.SubCateg = i.SubCateg
+--WHERE     (InvUnitCodes.CompNo = @CompanyId)  AND  InvItemsMF.ItemNo IN ('PK00057','pk00058','pk00137','pk00481','PK00670')
+
+
+ 
+UNION
+
+SELECT        InvUnitCodes.CompNo,  UPPER(InvItemsMF.ItemNo) AS ItemNo , InvUnitCodes.VSUnitCode, Conv3*Conv4 ,Barcode, CASE WHEN InvItemsMF.DefultUnit = 2 THEN 1 ELSE 0 END AS DefultUnit, CASE WHEN InvItemsMF.DefultUnit = 2 THEN 2 ELSE 0 END as IsDefaultDisplayUnit
+FROM            DB.dbo.InvUnitCodes INNER JOIN
+                         DB.dbo.InvItemsMF ON InvUnitCodes.CompNo = InvItemsMF.CompNo AND InvUnitCodes.UnitCode = InvItemsMF.UnitC2 --INNER JOIN
+                                         --DB.dbo.ItemCateg i ON InvItemsMF.CompNo = i.CompNo AND InvItemsMF.Categ = i.Categ AND InvItemsMF.SubCateg = i.SubCateg
+WHERE        (InvUnitCodes.CompNo = @CompanyId)  --AND (DivID = (CASE WHEN InvItemsMF.CompNo = 1 THEN 2 ELSE 1 END))
+--UNION
+--SELECT     InvUnitCodes.CompNo,  UPPER(InvItemsMF.ItemNo) AS ItemNo , InvUnitCodes.VSUnitCode, InvItemsMF.Conv2 * InvItemsMF.Conv3*Conv4 AS Conv2, InvItemsMF.BarCode, 
+--                      CASE WHEN InvItemsMF.DefultUnit = 1 THEN 1 ELSE 0 END AS DefultUnit, CASE WHEN InvItemsMF.DefultUnit = 1 THEN 1 ELSE 0 END AS IsDefaultDisplayUnit
+--FROM         DB.dbo.InvUnitCodes INNER JOIN
+--                      DB.dbo.InvItemsMF ON InvUnitCodes.CompNo = InvItemsMF.CompNo AND InvUnitCodes.UnitCode = InvItemsMF.UnitC1 INNER JOIN
+--                                         DB.dbo.ItemCateg i ON InvItemsMF.CompNo = i.CompNo AND InvItemsMF.Categ = i.Categ AND InvItemsMF.SubCateg = i.SubCateg
+--WHERE     (InvUnitCodes.CompNo = @CompanyId)  AND  InvItemsMF.ItemNo IN ('PK00057','pk00058','pk00137','pk00481','PK00670')
+
+UNION
+
+SELECT        InvUnitCodes.CompNo,  UPPER(InvItemsMF.ItemNo) AS ItemNo , InvUnitCodes.VSUnitCode, Conv4 ,Barcode, CASE WHEN InvItemsMF.DefultUnit = 3 THEN 1 ELSE 0 END AS DefultUnit, CASE WHEN InvItemsMF.DefultUnit = 3 THEN 3 ELSE 0 END as IsDefaultDisplayUnit
+FROM            DB.dbo.InvUnitCodes INNER JOIN
+                         DB.dbo.InvItemsMF ON InvUnitCodes.CompNo = InvItemsMF.CompNo AND InvUnitCodes.UnitCode = InvItemsMF.UnitC3 --INNER JOIN
+                                         --DB.dbo.ItemCateg i ON InvItemsMF.CompNo = i.CompNo AND InvItemsMF.Categ = i.Categ AND InvItemsMF.SubCateg = i.SubCateg
+WHERE        (InvUnitCodes.CompNo = @CompanyId)  --AND (DivID = (CASE WHEN InvItemsMF.CompNo = 1 THEN 2 ELSE 1 END))
+--UNION
+--SELECT     InvUnitCodes.CompNo,  UPPER(InvItemsMF.ItemNo) AS ItemNo , InvUnitCodes.VSUnitCode, InvItemsMF.Conv2 * InvItemsMF.Conv3*Conv4 AS Conv2, InvItemsMF.BarCode, 
+--                      CASE WHEN InvItemsMF.DefultUnit = 1 THEN 1 ELSE 0 END AS DefultUnit, CASE WHEN InvItemsMF.DefultUnit = 1 THEN 1 ELSE 0 END AS IsDefaultDisplayUnit
+--FROM         DB.dbo.InvUnitCodes INNER JOIN
+--                      DB.dbo.InvItemsMF ON InvUnitCodes.CompNo = InvItemsMF.CompNo AND InvUnitCodes.UnitCode = InvItemsMF.UnitC1 INNER JOIN
+--                                         DB.dbo.ItemCateg i ON InvItemsMF.CompNo = i.CompNo AND InvItemsMF.Categ = i.Categ AND InvItemsMF.SubCateg = i.SubCateg
+--WHERE     (InvUnitCodes.CompNo = @CompanyId)  AND  InvItemsMF.ItemNo IN ('PK00057','pk00058','pk00137','pk00481','PK00670')
+
+UNION
+
+SELECT        InvUnitCodes.CompNo,  UPPER(InvItemsMF.ItemNo) AS ItemNo , InvUnitCodes.VSUnitCode, 1 ,Barcode, CASE WHEN InvItemsMF.DefultUnit = 4 THEN 1 ELSE 0 END AS DefultUnit, CASE WHEN InvItemsMF.DefultUnit = 4 THEN 4 ELSE 0 END as IsDefaultDisplayUnit
+FROM            DB.dbo.InvUnitCodes INNER JOIN
+                         DB.dbo.InvItemsMF ON InvUnitCodes.CompNo = InvItemsMF.CompNo AND InvUnitCodes.UnitCode = InvItemsMF.UnitC4 --INNER JOIN
+                                         --DB.dbo.ItemCateg i ON InvItemsMF.CompNo = i.CompNo AND InvItemsMF.Categ = i.Categ AND InvItemsMF.SubCateg = i.SubCateg
+WHERE        (InvUnitCodes.CompNo = @CompanyId)  --AND (DivID = (CASE WHEN InvItemsMF.CompNo = 1 THEN 2 ELSE 1 END))
+--UNION
+--SELECT     InvUnitCodes.CompNo,  UPPER(InvItemsMF.ItemNo) AS ItemNo , InvUnitCodes.VSUnitCode, InvItemsMF.Conv2 * InvItemsMF.Conv3*Conv4 AS Conv2, InvItemsMF.BarCode, 
+--                      CASE WHEN InvItemsMF.DefultUnit = 1 THEN 1 ELSE 0 END AS DefultUnit, CASE WHEN InvItemsMF.DefultUnit = 1 THEN 1 ELSE 0 END AS IsDefaultDisplayUnit
+--FROM         DB.dbo.InvUnitCodes INNER JOIN
+--                      DB.dbo.InvItemsMF ON InvUnitCodes.CompNo = InvItemsMF.CompNo AND InvUnitCodes.UnitCode = InvItemsMF.UnitC1 INNER JOIN
+--                                         DB.dbo.ItemCateg i ON InvItemsMF.CompNo = i.CompNo AND InvItemsMF.Categ = i.Categ AND InvItemsMF.SubCateg = i.SubCateg
+--WHERE     (InvUnitCodes.CompNo = @CompanyId)  AND  InvItemsMF.ItemNo IN ('PK00057','pk00058','pk00137','pk00481','PK00670')
+
+
+
+) AS Xtbl
+Group By CompNo, ItemNo, VSUnitCode, Conv2, Barcode
+ORDER by CompNo, ItemNo, VSUnitCode
+
+--UPDATE ItemUnits SET IsDefaultUnit = 1, DefaultDisplay = 1 WHERE ItemNumber IN ('PK00057','pk00058','pk00137','pk00481','PK00670') AND CompanyID = @CompanyId
+	-----------------------------------------------------------------------
+	-------  [[[[[[ Rule :  ]]]]]] --------
+--	Merge VSS.dbo.ItemUnits AS VSS_ItemUnits_Rule
+
+--	USING(
+--			SELECT CompNo, ItemNo, 
+--CASE WHEN UseForSales = 1 AND UsedForReturn = 1 THEN 0 ELSE 
+--CASE WHEN UseForSales = 1 AND UsedForReturn = 0 THEN 2 ELSE
+--CASE WHEN UseForSales = 0 AND UsedForReturn = 1 THEN 3 ELSE 1 END END END AS RuleID
+--FROM DB.dbo.VanSales_Items WHERE CompNo = @CompanyId 
+--		 )
+--		 AS DB_ItemRule
+
+--	ON VSS_ItemUnits_Rule.ItemNumber = DB_ItemRule.ItemNo COLLATE SQL_Latin1_General_CP1256_CI_AS AND VSS_ItemUnits_Rule.CompanyID = DB_ItemRule.CompNo
+--	WHEN MATCHED THEN 
+--		UPDATE SET VSS_ItemUnits_Rule.RuleID = DB_ItemRule.RuleID ;
+
+	-----------------------------------------------------------------------------------------------
+	-------  [[[[[[ Items :  ]]]]]] --------
+
+
+	Merge VSS.dbo.Item AS VSS_Item
+
+	USING(
+--			SELECT InvItemsMF.CompNo as CompanyID, UPPER(InvItemsMF.ItemNo) AS ItemNo  as ItemNumber,REPLACE( ItemDesc,'''','') as DescA, REPLACE( ItemDesc_Ara,'''','') as  DescE,i.CategID as CategoryId, SUBSTRING(REPLACE( ItemDesc,'''',''),1,45) AS PrintingNameA, SUBSTRING(REPLACE( ItemDesc_Ara,'''',''),1,45) AS PrintingNameE, IsNull(VanSales_Items.DisplayOrder,9999) as DisplayOrder,case when InvItemsMF.IsHalt=0 then 1 else 0 end as Active
+--FROM            DB.dbo.InvItemsMF LEFT OUTER JOIN
+--                         DB.dbo.VanSales_Items ON InvItemsMF.CompNo = VanSales_Items.CompNo AND  UPPER(InvItemsMF.ItemNo) AS ItemNo  = VanSales_Items.ItemNo INNER JOIN
+--                                         DB.dbo.ItemCateg i ON InvItemsMF.CompNo = i.CompNo AND InvItemsMF.Categ = i.Categ AND InvItemsMF.SubCateg = i.SubCateg
+--WHERE        (InvItemsMF.CompNo = @CompanyId)  AND (DivID IN (2) OR  UPPER(InvItemsMF.ItemNo) AS ItemNo  IN ('PK00057','pk00058','pk00137','pk00481','PK00670'))
+
+SELECT InvItemsMF.CompNo as CompanyID, UPPER(InvItemsMF.ItemNo) AS ItemNumber,REPLACE( ItemDesc,'''','') as DescA, REPLACE( ItemDesc_Ara,'''','') as  DescE, i.CategID as CategoryId, SUBSTRING(REPLACE( ItemDesc,'''',''),1,45) AS PrintingNameA, SUBSTRING(REPLACE( ItemDesc_Ara,'''',''),1,45) AS PrintingNameE, IsNull(VanSales_Items.DisplayOrder,9999) as DisplayOrder,case when InvItemsMF.IsHalt=0 then 1 else 0 end as Active
+FROM            DB.dbo.InvItemsMF LEFT OUTER JOIN
+                         DB.dbo.VanSales_Items ON InvItemsMF.CompNo = VanSales_Items.CompNo AND  InvItemsMF.ItemNo = VanSales_Items.ItemNo INNER JOIN
+                                         DB.dbo.ItemCateg i ON InvItemsMF.CompNo = i.CompNo AND InvItemsMF.Categ = i.Categ AND InvItemsMF.SubCateg = i.SubCateg
+WHERE        (InvItemsMF.CompNo = @CompanyId)  --AND ((DivID = (CASE WHEN InvItemsMF.CompNo = 1 THEN 2 ELSE 1 END)) OR  InvItemsMF.ItemNo IN ('PK00057','pk00058','pk00137','pk00481','PK00670'))
+
+		 )
+		 AS DB_Item
+
+	ON VSS_Item.ItemNumber COLLATE SQL_Latin1_General_CP1256_CI_AS = DB_Item.ItemNumber COLLATE SQL_Latin1_General_CP1256_CI_AS AND VSS_Item.CompanyID = DB_Item.CompanyID
+	WHEN MATCHED THEN 
+		UPDATE SET VSS_Item.CategoryID = DB_Item.CategoryId,
+				   VSS_Item.DescriptionEnglish = DB_Item.DescE,
+				   VSS_Item.DescriptionArabic = DB_Item.DescA,
+				   VSS_Item.PrintingNameEnglish = DB_Item.PrintingNameE,
+				   VSS_Item.PrintingNameArabic = DB_Item.PrintingNameA,
+				   VSS_Item.DisplayOrder = DB_Item.DisplayOrder,
+				   VSS_Item.Active = DB_Item.Active
+
+	WHEN NOT MATCHED THEN
+		INSERT (CompanyID, ItemNumber, DescriptionEnglish, DescriptionArabic, CategoryID, CreationDate, PrintingNameEnglish, PrintingNameArabic,Active)
+		VALUES (DB_Item.CompanyID,DB_Item.ItemNumber,DB_Item.DescE,DB_Item.DescA,
+				DB_Item.CategoryId,GETDATE(),DB_Item.PrintingNameE,DB_Item.PrintingNameA,1);
+
+----------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------[Update EmployeeDiv]-----------------------------------------------------------
+
+--EXEC VSS.[dbo].[UpdateAllDataToEmployeeDiv] @CompanyId
+
+END
